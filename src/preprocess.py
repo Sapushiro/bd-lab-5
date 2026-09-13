@@ -6,17 +6,24 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from spark_session import SparkSessionFactory
+
+from logger import Logger
+
 
 class OpenFoodFactsPreprocessor:
     def __init__(self, spark: SparkSession, config_path: str = "config.json") -> None:
         self.spark = spark
         self.config = self._load_config(config_path)
 
+        logger = Logger(show=True)
+        self.log = logger.get_logger(__name__)
+
         self.input_path = self.config["data"]["input_path"]
         self.output_path = self.config["data"]["output_path"]
         self.max_rows = self.config["data"]["max_rows"]
         self.seed = self.config["model"]["seed"]
-        self.feature_names = self.config["features"]
+        self.feature_names = self.config["preprocessing_features"]
 
     @staticmethod
     def _load_config(config_path: str) -> dict:
@@ -29,15 +36,11 @@ class OpenFoodFactsPreprocessor:
             return json.load(file)
 
     def read_data(self) -> DataFrame:
-        print(f"Reading dataset: {self.input_path}")
+        self.log.info("Reading dataset: %s", self.input_path)
 
         data = self.spark.read.parquet(self.input_path)
 
-        print(
-            "Input partitions: "
-            f"{data.rdd.getNumPartitions()}"
-        )
-
+        self.log.info("Input partitions: %d", data.rdd.getNumPartitions())
         return data
 
     @staticmethod
@@ -111,7 +114,7 @@ class OpenFoodFactsPreprocessor:
             "sugars": 100.0,
             "fiber": 100.0,
             "proteins": 100.0,
-            "salt": 100.0,
+            "salt": 25.0,
         }
 
         conditions = [
@@ -145,8 +148,8 @@ class OpenFoodFactsPreprocessor:
 
         saved_count = self.spark.read.parquet(self.output_path).count()
 
-        print(f"Saved products: {saved_count}")
-        print(f"Output path: {self.output_path}")
+        self.log.info("Saved products: %d", saved_count)
+        self.log.info("Output path: %s", self.output_path)
 
     def run(self) -> None:
         raw_data = self.read_data()
@@ -162,7 +165,7 @@ class OpenFoodFactsPreprocessor:
 
         try:
             clean_count = clean_data.count()
-            print(f"Valid products: {clean_count}")
+            self.log.info("Valid products: %d", clean_count)
 
             result = self.create_sample(
                 clean_data,
@@ -175,16 +178,8 @@ class OpenFoodFactsPreprocessor:
             clean_data.unpersist()
 
 
-def create_spark_session() -> SparkSession:
-    return (
-        SparkSession.builder
-        .appName("OpenFoodFactsProcessing")
-        .getOrCreate()
-    )
-
 def main() -> None:
-    spark = create_spark_session()
-    spark.sparkContext.setLogLevel("WARN")
+    spark = SparkSessionFactory.create(app_name="OpenFoodFactsProcessing")
 
     try:
         preprocessor = OpenFoodFactsPreprocessor(spark=spark)
