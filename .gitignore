@@ -9,3 +9,5 @@ data/processed/
 models/
 artifacts/
 spark-events/
+
+logfile.log
